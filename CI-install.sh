@@ -36,10 +36,7 @@ conda install h5py
 conda install setproctitle
 conda install networkx
 conda install ml_collections
-
-cd ./fedml_mobile/server/executor
 pip install -r requirements.txt
-cd ./../../../
 
 # install the dataset
 # 1. MNIST
