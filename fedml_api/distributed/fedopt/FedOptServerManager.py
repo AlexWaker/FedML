@@ -15,14 +15,13 @@ except ImportError:
     from FedML.fedml_core.distributed.server.server_manager import ServerManager
 
 
-class FedAVGServerManager(ServerManager):
-    def __init__(self, args, aggregator, comm=None, rank=0, size=0, backend="MPI", is_preprocessed=False):
+class FedOptServerManager(ServerManager):
+    def __init__(self, args, aggregator, comm=None, rank=0, size=0, backend="MPI"):
         super().__init__(args, comm, rank, size, backend)
         self.args = args
         self.aggregator = aggregator
         self.round_num = args.comm_round
         self.round_idx = 0
-        self.is_preprocessed = is_preprocessed
 
     def run(self):
         super().run()
@@ -43,12 +42,17 @@ class FedAVGServerManager(ServerManager):
         sender_id = msg_params.get(MyMessage.MSG_ARG_KEY_SENDER)
         model_params = msg_params.get(MyMessage.MSG_ARG_KEY_MODEL_PARAMS)
         local_sample_number = msg_params.get(MyMessage.MSG_ARG_KEY_NUM_SAMPLES)
+
         self.aggregator.add_local_trained_result(sender_id - 1, model_params, local_sample_number)
         b_all_received = self.aggregator.check_whether_all_receive()
         logging.info("b_all_received = " + str(b_all_received))
         if b_all_received:
             global_model_params = self.aggregator.aggregate()
-            self.aggregator.test_on_all_clients(self.round_idx)
+            if self.args.dataset.startswith("stackoverflow") and self.round_idx < self.round_num - 1:
+                # because the testset of stackoverflow is large, we test on 10000 random samples
+                self.aggregator.test_on_random_test_samples(self.round_idx, sample_num = 10000)
+            else:
+                self.aggregator.test_on_all_clients(self.round_idx)
 
             # start the next round
             self.round_idx += 1
@@ -56,15 +60,9 @@ class FedAVGServerManager(ServerManager):
                 self.finish()
                 return
 
-            if self.is_preprocessed:
-                # sampling has already been done in data preprocessor
-                client_indexes = [self.round_idx] * self.args.client_num_per_round
-                print('indexes of clients: ' + str(client_indexes))
-            else:
-                # # sampling clients
-                client_indexes = self.aggregator.client_sampling(self.round_idx, self.args.client_num_in_total,
-                                                                 self.args.client_num_per_round)
-
+            # sampling clients
+            client_indexes = self.aggregator.client_sampling(self.round_idx, self.args.client_num_in_total,
+                                                             self.args.client_num_per_round)
             print("size = %d" % self.size)
             if self.args.is_mobile == 1:
                 print("transform_tensor_to_list")

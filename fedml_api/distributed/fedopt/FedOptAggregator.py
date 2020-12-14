@@ -1,14 +1,17 @@
 import copy
 import logging
+import random
 import time
 
 import numpy as np
+import torch
 import wandb
 
+from .optrepo import OptRepo
 from .utils import transform_list_to_tensor
 
 
-class FedAVGAggregator(object):
+class FedOptAggregator(object):
 
     def __init__(self, train_global, test_global, all_train_data_num,
                  train_data_local_dict, test_data_local_dict, train_data_local_num_dict, worker_num, device,
@@ -29,10 +32,18 @@ class FedAVGAggregator(object):
         self.model_dict = dict()
         self.sample_num_dict = dict()
         self.flag_client_model_uploaded_dict = dict()
+        self.opt = OptRepo.name2cls(self.args.server_optimizer)(
+            self.get_model_params(), lr=self.args.server_lr
+        )
         for idx in range(self.worker_num):
             self.flag_client_model_uploaded_dict[idx] = False
 
+    def get_model_params(self):
+        # return model parameters in type of generator
+        return self.trainer.model.parameters()
+
     def get_global_model_params(self):
+        # return model parameters in type of ordered_dict
         return self.trainer.get_model_params()
 
     def set_global_model_params(self, model_parameters):
@@ -76,12 +87,38 @@ class FedAVGAggregator(object):
                 else:
                     averaged_params[k] += local_model_params[k] * w
 
-        # update the global model which is cached at the server side
-        self.set_global_model_params(averaged_params)
+        # server optimizer
+        # save optimizer state
+        self.opt.zero_grad()
+        opt_state = self.opt.state_dict()
+        # set new aggregated grad
+        self.set_model_global_grads(averaged_params)
+        self.opt = OptRepo.name2cls(self.args.server_optimizer)(
+            self.get_model_params(), lr=self.args.server_lr
+        )
+        # load optimizer state
+        self.opt.load_state_dict(opt_state)
+        self.opt.step()
 
         end_time = time.time()
         logging.info("aggregate time cost: %d" % (end_time - start_time))
-        return averaged_params
+        return self.get_global_model_params()
+
+    def set_model_global_grads(self, new_state):
+        new_model = copy.deepcopy(self.trainer.model)
+        new_model.load_state_dict(new_state)
+        with torch.no_grad():
+            for parameter, new_parameter in zip(
+                    self.trainer.model.parameters(), new_model.parameters()
+            ):
+                parameter.grad = parameter.data - new_parameter.data
+                # because we go to the opposite direction of the gradient
+        model_state_dict = self.trainer.model.state_dict()
+        new_model_state_dict = new_model.state_dict()
+        for k in dict(self.trainer.model.named_parameters()).keys():
+            new_model_state_dict[k] = model_state_dict[k]
+        # self.trainer.model.load_state_dict(new_model_state_dict)
+        self.set_global_model_params(new_model_state_dict)
 
     def client_sampling(self, round_idx, client_num_in_total, client_num_per_round):
         if client_num_in_total == client_num_per_round:
@@ -105,15 +142,16 @@ class FedAVGAggregator(object):
             test_losses = []
             for client_idx in range(self.args.client_num_in_total):
                 # train data
-                metrics = self.trainer.test(self.train_data_local_dict[client_idx], self.device, self.args)
-                train_tot_correct, train_num_sample, train_loss = metrics['test_correct'], metrics['test_total'], metrics['test_loss']
+                train_tot_correct, train_num_sample, train_loss = self.trainer.test(self.train_data_local_dict[
+                                                                                        client_idx],
+                                                                                    self.device, self.args)
                 train_tot_corrects.append(copy.deepcopy(train_tot_correct))
                 train_num_samples.append(copy.deepcopy(train_num_sample))
                 train_losses.append(copy.deepcopy(train_loss))
 
                 # test data
-                metrics = self.trainer.test(self.test_data_local_dict[client_idx], self.device, self.args)
-                test_tot_correct, test_num_sample, test_loss = metrics['test_correct'], metrics['test_total'], metrics['test_loss']
+                test_tot_correct, test_num_sample, test_loss = self.trainer.test(self.test_data_local_dict[client_idx],
+                                                                                 self.device, self.args)
                 test_tot_corrects.append(copy.deepcopy(test_tot_correct))
                 test_num_samples.append(copy.deepcopy(test_num_sample))
                 test_losses.append(copy.deepcopy(test_loss))
@@ -132,6 +170,36 @@ class FedAVGAggregator(object):
             wandb.log({"Train/Loss": train_loss, "round": round_idx})
             stats = {'training_acc': train_acc, 'training_loss': train_loss}
             logging.info(stats)
+
+            # test on test dataset
+            test_acc = sum(test_tot_corrects) / sum(test_num_samples)
+            test_loss = sum(test_losses) / sum(test_num_samples)
+            wandb.log({"Test/Acc": test_acc, "round": round_idx})
+            wandb.log({"Test/Loss": test_loss, "round": round_idx})
+            stats = {'test_acc': test_acc, 'test_loss': test_loss}
+            logging.info(stats)
+
+
+    def test_on_random_test_samples(self, round_idx, sample_num = 10000):
+
+        if round_idx % self.args.frequency_of_the_test == 0 or round_idx == self.args.comm_round - 1:
+            
+            test_data_num  = len(self.test_global.dataset)
+            sample_indices = random.sample(range(test_data_num), min(sample_num, test_data_num))
+            subset = torch.utils.data.Subset(self.test_global.dataset, sample_indices)
+            sample_testset = torch.utils.data.DataLoader(subset, batch_size=self.args.batch_size)
+
+            logging.info("################ local_test_round_{}: {} test samples".format(round_idx, str(sample_num)))
+
+            test_num_samples = []
+            test_tot_corrects = []
+            test_losses = []
+            
+            # test data
+            test_tot_correct, test_num_sample, test_loss = self.trainer.test(sample_testset, self.device, self.args)
+            test_tot_corrects.append(copy.deepcopy(test_tot_correct))
+            test_num_samples.append(copy.deepcopy(test_num_sample))
+            test_losses.append(copy.deepcopy(test_loss))
 
             # test on test dataset
             test_acc = sum(test_tot_corrects) / sum(test_num_samples)
