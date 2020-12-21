@@ -14,6 +14,7 @@ from mpi4py import MPI
 # add the FedML root directory to the python path
 from torch import nn
 
+
 sys.path.insert(0, os.path.abspath(os.path.join(os.getcwd(), "../../../")))
 
 from fedml_api.data_preprocessing.cifar10.data_loader import load_partition_data_distributed_cifar10
@@ -21,8 +22,8 @@ from fedml_api.data_preprocessing.cifar100.data_loader import load_partition_dat
 from fedml_api.data_preprocessing.cinic10.data_loader import load_partition_data_distributed_cinic10
 from fedml_api.distributed.fednas.FedNASAPI import FedML_init, FedML_FedNAS_distributed
 from fedml_api.model.cv.darts import genotypes
-from fedml_api.model.cv.darts import NetworkCIFAR
 from fedml_api.model.cv.darts.model_search import Network
+from fedml_api.model.cv.darts.model import NetworkCIFAR
 
 comm = MPI.COMM_WORLD
 rank = comm.Get_rank()

@@ -241,7 +241,7 @@ if __name__ == "__main__":
     parser.add_argument('--data_dir', type=str, default='./../../../data/cifar10',
                         help='data directory')
 
-    parser.add_argument('--batch_size', type=int, default=32, metavar='N',
+    parser.add_argument('--batch_size', type=int, default=2, metavar='N',
                         help='input batch size for training (default: 64)')
 
     parser.add_argument('--client_optimizer', type=str, default='sgd',
@@ -269,7 +269,7 @@ if __name__ == "__main__":
                         help="Where to search for pretrained vit models.")
 
     parser.add_argument("--is_distributed", default=1, type=int,
-                        help="Resolution size")
+                        help="is_distributed")
     args = parser.parse_args()
     print(args)
 
