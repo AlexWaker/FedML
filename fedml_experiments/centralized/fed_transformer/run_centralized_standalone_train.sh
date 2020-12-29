@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
-DATASET=$1
-DATA_DIR=$2
-LR=$3
+LR=$1
+DATASET=$2
+DATA_DIR=$3
+
 
 python main_vit_fine_tune.py \
 --lr $LR \
