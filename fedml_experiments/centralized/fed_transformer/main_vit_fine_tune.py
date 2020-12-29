@@ -268,7 +268,7 @@ if __name__ == "__main__":
                         default="./../../../fedml_api/model/cv/pretrained/Transformer/vit/ViT-B_16.npz",
                         help="Where to search for pretrained vit models.")
 
-    parser.add_argument("--is_distributed", default=1, type=int,
+    parser.add_argument("--is_distributed", default=0, type=int,
                         help="is_distributed")
     args = parser.parse_args()
     print(args)
