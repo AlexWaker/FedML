@@ -127,11 +127,11 @@ def train(epoch, epoch_loss, train_dl, criterion, optimizer, scheduler, device):
         optimizer.step()
         scheduler.step()
         batch_loss.append(loss.item())
-        # if len(batch_loss) > 0:
-        #     epoch_loss.append(sum(batch_loss) / len(batch_loss))
-        #     logging.info('(Training Epoch: {}\tBatch:{}\tLoss: {:.6f}'.format(epoch, batch_idx,
-        #                                                                       sum(epoch_loss) / len(epoch_loss)))
-        # logging.info("time cost per iteration: " + str(time.time() - time_start_train_per_batch))
+        if len(batch_loss) > 0:
+            epoch_loss.append(sum(batch_loss) / len(batch_loss))
+            logging.info('(Training Epoch: {}\tBatch:{}\tLoss: {:.6f}'.format(epoch, batch_idx,
+                                                                              sum(epoch_loss) / len(epoch_loss)))
+        logging.info("time cost per iteration: " + str(time.time() - time_start_train_per_batch))
 
 
 def train_and_eval(model, train_dl, test_dl, args, device):
